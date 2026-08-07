@@ -346,7 +346,7 @@
   <header>
     <div class="head-card">
       <div class="top">
-        <div class="brand"><i></i> Basket</div>
+        <div class="brand"><i></i> Basket <span id="verTag" style="opacity:.6;letter-spacing:.05em"></span></div>
         <button class="icon-btn" onclick="lockNow()" title="Lock">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
             <rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
@@ -431,6 +431,7 @@
       <select id="periodFilter" onchange="render()"></select>
       <button class="btn ghost" id="btnExport" onclick="exportCsv()">Export CSV</button>
       <button class="btn ghost" onclick="pickCsv()">Import CSV</button>
+      <button class="btn ghost" onclick="hardRefresh()">Force update</button>
       <button class="btn ghost danger" onclick="clearAll()">Clear all data</button>
     </div>
     <input id="csvFile" type="file" accept=".csv,text/csv" class="hidden" onchange="importCsv(this)">
@@ -539,6 +540,8 @@
 /* =========================================================
    KEYS + CONSTANTS
    ========================================================= */
+var APP_VERSION = 'v3';   /* shown next to the Basket logo — check this to confirm the update landed */
+
 var K_CAT  = 'basket.cat.v1';
 var K_CATL = 'basket.catalog.v1';
 var K_LIST = 'basket.list.v1';
@@ -1965,10 +1968,42 @@ document.addEventListener('visibilitychange', function(){
   if (!document.hidden && !document.getElementById('app').classList.contains('hidden')) render();
 });
 
+/* Wipes the offline cache and the service worker, then reloads from the server.
+   Use this if the app ever seems stuck on an older build. */
+function hardRefresh(){
+  if (!confirm('Reload the app from scratch?\n\nYour list, recipes, meal plan and history are all kept — this only clears the offline copy of the app itself.')) return;
+  var jobs = [];
+  if (window.caches && caches.keys) {
+    jobs.push(caches.keys().then(function(keys){
+      return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+    }));
+  }
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+    jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+      return Promise.all(rs.map(function(r){ return r.unregister(); }));
+    }));
+  }
+  Promise.all(jobs)['catch'](function(){}).then(function(){
+    location.replace(location.pathname + '?u=' + Date.now());
+  });
+}
+
+document.getElementById('verTag').textContent = APP_VERSION;
 seed();
 startLock();
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function(){});
+  navigator.serviceWorker.register('sw.js').then(function(reg){
+    reg.update();                                   /* always check for a newer worker on launch */
+    reg.addEventListener('updatefound', function(){
+      var sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', function(){
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+          location.reload();                        /* new build ready — take it straight away */
+        }
+      });
+    });
+  }).catch(function(){});
 }
 </script>
 </body>
